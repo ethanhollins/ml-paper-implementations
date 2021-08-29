@@ -61,7 +61,7 @@ def main():
     seq = Sequence(device)
     seq.double()
     seq.to(device)
-    criterion = nn.MSELoss()
+    criterion = nn.SmoothL1Loss()
     # use LBFGS as optimizer since we can load the whole data to train
     optimizer = optim.LBFGS(seq.parameters(), lr=0.8)
     # Begin training
