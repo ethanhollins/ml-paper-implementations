@@ -22,7 +22,30 @@ def get_labels(data):
     contrary.
     '''
 
-    return (data >= 0).astype(np.int32)
+    return pd.concat((
+        (data > 0).astype(np.int32),
+        (data < 0).astype(np.int32)
+    ), axis=1)
+
+    # print("Getting labels...")
+    # result = np.zeros((data.shape[0], 2))
+    # for i in range(1, data.shape[0]):
+    #     if data.values[i] > 0:
+    #         if result[i-1, 0] == 0:
+    #             result[i, 0] = 1
+    #         elif result[i-1, 0] == 1:
+    #             result[i, 0] = 2
+    #         else:
+    #             result[i, 0] = 0
+    #     elif data.values[i-1] > 0 and data.values[i] < 0:
+    #         if result[i-1, 1] == 0:
+    #             result[i, 1] = 1
+    #         elif result[i-1, 1] == 1:
+    #             result[i, 1] = 2
+    #         else:
+    #             result[i, 1] = 0
+
+    # return pd.DataFrame(data=result, index=data.index)
 
 
 # Pre-process training data

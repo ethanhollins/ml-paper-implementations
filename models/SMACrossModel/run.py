@@ -18,26 +18,11 @@ Pre-processing
 SOURCE = "fxcm"
 INSTRUMENT = "EUR_USD"
 PERIOD = "M1"
-start_date = datetime(2020,1,1)
+start_date = datetime(2017,1,1)
 end_date = datetime(2020,12,31)
 
 
-class MyDataset(Dataset):
-
-    def __init__(self, data, labels):
-        self.data = data
-        self.labels = labels
-
-    def __len__(self):
-        # Return total size
-        return self.data.shape[0] * self.data.shape[1]
-
-    def __getitem__(self, index):
-        # Return batch
-        return self.data[:, index:index+1, :], self.labels[:, index:index+1, :]
-
-
-def preprocess(device, batch_size=512):
+def preprocess(batch_size=512):
     # Load Data
     data = load_price_data(SOURCE, INSTRUMENT, PERIOD, start_date, end_date)
     data = data[["midopen", "midhigh", "midlow", "midclose"]]
@@ -72,63 +57,60 @@ def preprocess(device, batch_size=512):
     y_test = np.delete(y, train_indices, axis=1)
 
     # Convert to PyTorch Tensors
-    X_train = T.tensor(X_train, dtype=T.float).to(device)
-    y_train = T.tensor(y_train, dtype=T.float).to(device)
-    X_test = T.tensor(X_test, dtype=T.float).to(device)
-    y_test = T.tensor(y_test, dtype=T.float).to(device)
+    X_train = T.tensor(X_train, dtype=T.float)
+    y_train = T.tensor(y_train, dtype=T.float)
+    X_test = T.tensor(X_test, dtype=T.float)
+    y_test = T.tensor(y_test, dtype=T.float)
 
     # Show data info
     print(f"Train: {X_train.shape}\nTest: {X_test.shape}")
 
-    train_set = MyDataset(X_train, y_train)
-    test_set = MyDataset(X_test, y_test)
-
-    return train_set, test_set
+    return X_train, y_train, X_test, y_test
 
 
 def get_agent(device, state_space, n_actions):
     return Agent(device, state_space, n_actions)
 
-    
-def train(agent, train_set, ep_num):
-    agent.net.train()
-    for batch_idx, (data, labels) in enumerate(train_set):
-        _, loss = agent.learn(data, labels)
-        if batch_idx % 10 == 0:
-            print("Train Ep {}: [{:06d}/{:06d} ({:.0f})%]\tLoss: {:.6f}".format(
-                ep_num, batch_idx * len(data), len(train_set),
-                100. * batch_idx / len(train_set.data[1]), loss.item()
-            ), end='\r')
 
-def test(agent, test_set):
-    agent.net.eval()
-    test_loss = 0
-    correct = 0
-    with T.no_grad():
-        for data, labels in test_set:
-            output, loss = agent.learn(data, labels)
-            test_loss += loss.item()
-            pred = output.argmax(dim=1, keepdim=True)
-            correct += pred.eq(labels.view_as(pred)).sum().item()
+def main(episodes=100, save=False):
+    input_space = 1
+    action_space = 2
 
-    test_loss /= len(test_set)
+    device = T.device("cuda" if T.cuda.is_available() else "cpu")
+    X_train, y_train, X_test, y_test = preprocess(batch_size=1024)
+    agent = get_agent(device, input_space, action_space)
 
-    print("\nTest set: Average Loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n".format(
-        test_loss, correct, len(test_set),
-        100. * correct / len(test_set)
-    ))
-
-
-def run(train_set, test_set, agent, episodes=100, save=False):
+    batch_step = 500
     for ep_num in range(episodes):
-        train(agent, train_set, ep_num)
-        test(agent, test_set)
+        for batch_idx in range(0, X_train.shape[1], batch_step):
+            _, train_loss = agent.train(
+                X_train[:, batch_idx:batch_idx+batch_step], 
+                y_train[:, batch_idx:batch_idx+batch_step]
+            )
+            if batch_idx % 10 == 0 or batch_idx + batch_step >= X_train.shape[1]:
+                print("Train Batch {:03d}: [{:03d}/{:03d} ({:.0f}%)]\tLoss: {:.6f}".format(
+                    batch_idx, batch_idx, X_train.shape[1],
+                    100. * batch_idx / X_train.shape[1], train_loss.item()
+                ), end='\r')
+
+        test_loss = 0
+        correct = 0
+        for batch_idx in range(0, X_test.shape[1], batch_step):
+            batch_loss, batch_correct = agent.test(
+                X_test[:, batch_idx:batch_idx+batch_step], 
+                y_test[:, batch_idx:batch_idx+batch_step]
+            )
+            test_loss += batch_loss
+            correct += batch_correct
+
+        test_loss /= (X_test.shape[1] / batch_step)
+        print("\n(Ep {}/{}) Test set: Average Loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n".format(
+            ep_num, episodes, test_loss, correct, X_test.shape[0] * X_test.shape[1],
+            100. * correct / (X_test.shape[0] * X_test.shape[1])
+        ))
 
     if save:
         agent.save_models()
 
 if __name__ == "__main__":
-    device = T.device("cuda" if T.cuda.is_available() else "cpu")
-    train_set, test_set = preprocess(device, batch_size=1024)
-    agent = get_agent(device, train_set.data.shape[2], train_set.labels.shape[2])
-    run(train_set, test_set, agent, episodes=1)
+    main(episodes=200)
