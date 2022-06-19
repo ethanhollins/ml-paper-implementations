@@ -1,3 +1,3 @@
-# ML Wolf
+# ML Research Paper Implementations
 
-Implementing Reinforcement Learning algorithms using PyTorch in python.
+Implementing Machine Learning algorithms using PyTorch in python.
